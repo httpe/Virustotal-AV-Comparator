@@ -10,7 +10,7 @@
 __author__ = "Httpe, Xiaokui Shu"
 __copyright__ = "Copyright 2016, The VirusTotal AV Comparison Project"
 __license__ = "Apache"
-__version__ = "1.2"
+__version__ = "1.3"
 __maintainer__ = "Httpe"
 __status__ = "Prototype"
 __date__ = "2016-10-29"
@@ -219,7 +219,7 @@ class VirusTotal(object):
                         res = self.regenerate_report(sha256chksum)
                         
                         if res.status_code == self.HTTP_OK:
-                            print(res.text)
+                            
                             resmap = json.loads(res.text)
                             self.logger.info("%s: \n\t  Reanalyze request success", filename)
                             for av in avs:
@@ -436,7 +436,7 @@ if __name__ == "__main__":
 
     
 
-    parser = argparse.ArgumentParser(description='Virustotal AV Comparator V1.2')
+    parser = argparse.ArgumentParser(description='Virustotal AV Comparator V1.3')
 
     parser.add_argument('paths', metavar='PATH', nargs='*',
                 help='File/Folder to be scanned', default=[])
