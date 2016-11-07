@@ -10,10 +10,10 @@
 __author__ = "Httpe, Xiaokui Shu"
 __copyright__ = "Copyright 2016, The VirusTotal AV Comparison Project"
 __license__ = "Apache"
-__version__ = "1.3"
+__version__ = "1.4"
 __maintainer__ = "Httpe"
 __status__ = "Prototype"
-__date__ = "2016-10-29"
+__date__ = "2016-11-07"
 __contact__ = "https://github.com/httpe/Virustotal-AV-Comparator"
 
 
@@ -161,8 +161,8 @@ class VirusTotal(object):
                 if res.status_code == self.HTTP_OK:
                     resmap = json.loads(res.text)
                     if not self.is_verboselog:
-                        self.logger.info("%s: \n\t  Send file success, HTTP: %d, response_code: %d, scan_id: %s",
-                                filename, res.status_code, resmap["response_code"], resmap["scan_id"])
+                        self.logger.info("%s: \n\t  Send file success, HTTP: %d",
+                                filename, res.status_code)
                     else:
                         self.logger.info("%s: \n\t  Send file success: %s, HTTP: %d, content: %s", filename, res.status_code, res.text)
 
@@ -339,17 +339,15 @@ class VirusTotal(object):
                 resmap = json.loads(res.text)
                 resmapdict[filename] = resmap
 
-        ##                if not self.is_verboselog:
-        ##                    self.logger.info("retrieve report: %s, HTTP: %d, response_code: %d, scan_date: %s, positives/total: %d/%d",
-        ##                            os.path.basename(filename), res.status_code, resmap["response_code"], resmap["scan_date"], resmap["positives"], resmap["total"])
-        ##                else:
-        ##                    self.logger.info("retrieve report: %s, HTTP: %d, content: %s", os.path.basename(filename), res.status_code, res.text)                
 
-                self.logger.info("%s: \n\t  Scandate: %s, Positive/Total: %d/%d",
-                                 filename,
-                                 resmap["scan_date"],
-                                 resmap["positives"],
-                                 resmap["total"])
+                if resmap['response_code'] == 0:
+                    self.logger.warning("%s: \n\t  File not found", filename)
+                else:             
+                    self.logger.info("%s: \n\t  Scandate: %s, Positive/Total: %d/%d",
+                                     filename,
+                                     resmap["scan_date"],
+                                     resmap["positives"],
+                                     resmap["total"])
 
             else:
                 self.logger.warning("%s: \n\t  Retrieve report failed: %s, HTTP: %d", filename, res.status_code)
@@ -377,11 +375,15 @@ class VirusTotal(object):
 
                     if res.status_code == self.HTTP_OK:
                         resmap = json.loads(res.text)
-                        if not self.is_verboselog:
-                            self.logger.info("%s: \n\t  Retrieve report success, HTTP: %d, response_code: %d, scan_date: %s, positives/total: %d/%d",
-                                    checksum, res.status_code, resmap["response_code"], resmap["scan_date"], resmap["positives"], resmap["total"])
+
+                        if resmap['response_code'] == 0:
+                            self.logger.warning("%s: \n\t  Checksum not found", checksum)
                         else:
-                            self.logger.info("%s: \n\t  Retrieve report success, HTTP: %d, content: %s", checksum, res.status_code, res.text)
+                            if not self.is_verboselog:
+                                self.logger.info("%s: \n\t  Retrieve report success, HTTP: %d, scan_date: %s, positives/total: %d/%d",
+                                        checksum, res.status_code, resmap["scan_date"], resmap["positives"], resmap["total"])
+                            else:
+                                self.logger.info("%s: \n\t  Retrieve report success, HTTP: %d, content: %s", checksum, res.status_code, res.text)
                     else:
                         self.logger.warning("%s: \n\t  Retrieve report failed, HTTP: %d", checksum, res.status_code)
 
@@ -436,7 +438,7 @@ if __name__ == "__main__":
 
     
 
-    parser = argparse.ArgumentParser(description='Virustotal AV Comparator V1.3')
+    parser = argparse.ArgumentParser(description='Virustotal AV Comparator V1.4')
 
     parser.add_argument('paths', metavar='PATH', nargs='*',
                 help='File/Folder to be scanned', default=[])
