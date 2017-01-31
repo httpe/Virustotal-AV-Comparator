@@ -10,10 +10,10 @@
 __author__ = "Httpe, Xiaokui Shu"
 __copyright__ = "Copyright 2016, The VirusTotal AV Comparison Project"
 __license__ = "Apache"
-__version__ = "1.5"
+__version__ = "1.6"
 __maintainer__ = "Httpe"
 __status__ = "Prototype"
-__date__ = "2016-11-07"
+__date__ = "2017-01-30"
 __contact__ = "https://github.com/httpe/Virustotal-AV-Comparator"
 
 
@@ -87,7 +87,7 @@ class VirusTotal(object):
         # whether a retrieval request is sent recently
         self.has_sent_retrieve_req = False
         # if needed (public API), sleep this amount of time between requests
-        self.PUBLIC_API_SLEEP_TIME = 20
+        self.PUBLIC_API_SLEEP_TIME = 16
 
         self.logger = logging.getLogger("virt-log")
         self.logger.setLevel(logging.INFO)
@@ -172,7 +172,7 @@ class VirusTotal(object):
                         result.append(True)
                         break
                     else:
-                        self.logger.warning("%s: \n\t  Attempt %d to send file failed: %s, HTTP: %d", retry+1, filename, res.status_code)
+                        self.logger.warning("%s: \n\t  Attempt %d to send file failed, HTTP: %d", filename, retry+1, res.status_code)
                         
                         if retry == self.RETRY-1:
                             result.append(False)
@@ -202,7 +202,7 @@ class VirusTotal(object):
                 res = self.retrieve_report(sha256chksum)
                 
                 if res.status_code != self.HTTP_OK:
-                    self.logger.warning("%s: \n\t  Attempt %d to retrieve report failed, HTTP: %d", retry1, filename, res.status_code)
+                    self.logger.warning("%s: \n\t  Attempt %d to retrieve report failed, HTTP: %d", filename, retry1+1, res.status_code)
                     if retry1 == self.RETRY - 1:
                         for av in avs:
                             avs[av].append('Failed')                      
@@ -244,7 +244,7 @@ class VirusTotal(object):
                                     break
                                     
                                 else:
-                                    self.logger.warning("%s: \n\t  Attempt %d to regenerate report failed, HTTP: %d", retry2+1, filename, res.status_code)
+                                    self.logger.warning("%s: \n\t  Attempt %d to regenerate report failed, HTTP: %d", filename, retry2+1, res.status_code)
                                     if retry2 == self.RETRY - 1:
                                         for av in avs:
                                             avs[av].append('Failed')                            
@@ -366,7 +366,7 @@ class VirusTotal(object):
                                      resmap["total"])
 
             else:
-                self.logger.warning("%s: \n\t  Retrieve report failed: %s, HTTP: %d", filename, res.status_code)
+                self.logger.warning("%s: \n\t  Retrieve report failed: HTTP: %d", filename, res.status_code)
                 resmapdict[filename] = None
 
         return resmapdict
@@ -456,7 +456,6 @@ class VirusTotal(object):
 if __name__ == "__main__":
     vt = VirusTotal()
     try:
-        #with open(os.getenv("HOME") + '/.virustotal.api') as keyfile:
         with open(os.path.join(cur_file_dir(), 'apikey.txt')) as keyfile:
             vt.apikey = keyfile.read().strip()
     except:
@@ -467,7 +466,7 @@ if __name__ == "__main__":
 
     
 
-    parser = argparse.ArgumentParser(description='Virustotal AV Comparator V1.5')
+    parser = argparse.ArgumentParser(description='Virustotal AV Comparator V1.6')
 
     parser.add_argument('paths', metavar='PATH', nargs='*',
                 help='File/Folder to be scanned', default=[])
