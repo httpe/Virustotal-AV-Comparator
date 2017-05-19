@@ -8,12 +8,12 @@
 """
 
 __author__ = "Httpe, Xiaokui Shu"
-__copyright__ = "Copyright 2016, The VirusTotal AV Comparison Project"
+__copyright__ = "Copyright 2016, The VirusTotal AV Comparator Project"
 __license__ = "Apache"
-__version__ = "1.6"
+__version__ = "1.7"
 __maintainer__ = "Httpe"
 __status__ = "Prototype"
-__date__ = "2017-01-30"
+__date__ = "2017-05-19"
 __contact__ = "https://github.com/httpe/Virustotal-AV-Comparator"
 
 
@@ -459,6 +459,7 @@ if __name__ == "__main__":
         with open(os.path.join(cur_file_dir(), 'apikey.txt')) as keyfile:
             vt.apikey = keyfile.read().strip()
     except:
+        print('Virustotal AV Comparator V1.7')
         print('[Error] Please put your VirusTotal API Key in file "apikey.txt" under the current directory')
         print('[Error] For more information about API Key, please refer to "https://www.virustotal.com/en/documentation/public-api/"')
         input("Press the enter key to exit.")
@@ -466,7 +467,7 @@ if __name__ == "__main__":
 
     
 
-    parser = argparse.ArgumentParser(description='Virustotal AV Comparator V1.6')
+    parser = argparse.ArgumentParser(description='Virustotal AV Comparator V1.7')
 
     parser.add_argument('paths', metavar='PATH', nargs='*',
                 help='File/Folder to be scanned', default=[])
@@ -484,7 +485,7 @@ if __name__ == "__main__":
 
     parser.add_argument("-S", "--statistic", help="write result statistic in a CSV file (default: Result.csv)", metavar="STATPATH")
     parser.add_argument("-l", "--log", help="log actions and responses in file (default: log.txt)", metavar="LOGFILE")
-    parser.add_argument("-t", "--time", help="reanalyze the file if the report was generated before the time, format 'YYYY-MM-DD hh:mm:ss'", metavar="TIME")
+    parser.add_argument("-t", "--time", help="reanalyze the file if the report was generated before the time, format 'YYYY-MM-DD hh:mm:ss'/'now'", metavar="TIME")
 
     args = parser.parse_args()
 
@@ -498,7 +499,10 @@ if __name__ == "__main__":
     vt.logger.addHandler(filelog)
 
     if args.time:
-        vt.reanalyze_time = args.time
+        if args.time == 'now':
+            vt.reanalyze_time = '2099-12-31 00:00:00'
+        else:
+            vt.reanalyze_time = args.time
 
     if args.private:
         vt.is_public_api = False
