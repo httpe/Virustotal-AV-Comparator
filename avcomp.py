@@ -7,13 +7,13 @@
         - PTable (can be installed manually or through pip)
 """
 
-__author__ = "Httpe, Xiaokui Shu"
+__author__ = "httpe, Xiaokui Shu"
 __copyright__ = "Copyright 2016, The VirusTotal AV Comparator Project"
 __license__ = "Apache"
-__version__ = "1.7"
-__maintainer__ = "Httpe"
+__version__ = "1.8"
+__maintainer__ = "httpe"
 __status__ = "Prototype"
-__date__ = "2017-05-19"
+__date__ = "2017-05-28"
 __contact__ = "https://github.com/httpe/Virustotal-AV-Comparator"
 
 
@@ -27,11 +27,23 @@ import time
 import csv
 import stat
 
+
 import requests
 from prettytable import PrettyTable
 
 
+from requests.adapters import HTTPAdapter
+#from requests.packages.urllib3.poolmanager import PoolManager
+from urllib3.poolmanager import PoolManager
+import ssl
 
+class MyAdapter(HTTPAdapter):
+    def init_poolmanager(self, connections, maxsize, block=False):
+        self.poolmanager = PoolManager(num_pools=connections,
+                                       maxsize=maxsize,
+                                       block=block,
+                                       ssl_version=ssl.PROTOCOL_TLSv1)
+        
 
 def has_hidden_attribute(filepath):
     """
@@ -82,6 +94,11 @@ class VirusTotal(object):
         self.HTTP_OK = 200
         self.RETRY = 3
 
+        self.headers = {
+          "Accept-Encoding": "gzip, deflate",
+          "User-Agent" : "gzip,  My Python requests library example client or username"
+          }
+
         # whether the API_KEY is a public API. limited to 4 per min if so.
         self.is_public_api = True
         # whether a retrieval request is sent recently
@@ -101,6 +118,9 @@ class VirusTotal(object):
 
         self.reanalyze_time = ''
         self.statpath = 'Result.csv'
+
+        self.vt_session = requests.Session()
+        self.vt_session.mount(self.URL_BASE, MyAdapter())
 
     def list_all_files(self, paths):
         """
@@ -417,7 +437,10 @@ class VirusTotal(object):
 
         url = self.URL_BASE + "file/report"
         params = {"apikey": self.apikey, "resource": chksum}
-        res = requests.post(url, data=params)
+        
+        #res = requests.post(url, data=params)
+        res = self.vt_session.get(url, params=params, headers=self.headers)
+
         self.has_sent_retrieve_req = True
         return res
     
@@ -434,7 +457,11 @@ class VirusTotal(object):
 
         url = self.URL_BASE + "file/rescan"
         params = {"apikey": self.apikey, "resource": chksum}
-        res = requests.post(url, data=params)
+
+        #res = requests.post(url, data=params)
+        res = self.vt_session.post(url, params=params, headers=self.headers)
+
+
         self.has_sent_retrieve_req = True
         return res
             
@@ -446,20 +473,30 @@ class VirusTotal(object):
 
         url = self.URL_BASE + "file/scan"
         params = {"apikey": self.apikey}
+
+        filename = os.path.basename(path)
         
         with open(path, 'rb') as file:
-            res = requests.post(url, data=params, files={"file": file})
-            self.has_sent_retrieve_req = True
-            return res
+
+            #res = requests.post(url, data=params, files={"file": file})
+            res = self.vt_session.post(url, params=params, files={"file": (filename, file)})
+
+
+        self.has_sent_retrieve_req = True
+        return res
 
 
 if __name__ == "__main__":
+
+
+    name_version = 'Virustotal AV Comparator ' + __version__;
+
     vt = VirusTotal()
     try:
         with open(os.path.join(cur_file_dir(), 'apikey.txt')) as keyfile:
             vt.apikey = keyfile.read().strip()
     except:
-        print('Virustotal AV Comparator V1.7')
+        print(name_version)
         print('[Error] Please put your VirusTotal API Key in file "apikey.txt" under the current directory')
         print('[Error] For more information about API Key, please refer to "https://www.virustotal.com/en/documentation/public-api/"')
         input("Press the enter key to exit.")
@@ -467,7 +504,7 @@ if __name__ == "__main__":
 
     
 
-    parser = argparse.ArgumentParser(description='Virustotal AV Comparator V1.7')
+    parser = argparse.ArgumentParser(description = name_version)
 
     parser.add_argument('paths', metavar='PATH', nargs='*',
                 help='File/Folder to be scanned', default=[])

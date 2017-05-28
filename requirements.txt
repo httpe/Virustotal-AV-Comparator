@@ -1,0 +1,14 @@
+appdirs==1.4.3
+beautifulsoup4==4.5.1
+future==0.16.0
+lxml==3.6.4
+nltk==3.2.1
+packaging==16.8
+pefile==2016.3.28
+ptable==0.9.2
+PyInstaller==3.2.1
+pyparsing==2.2.0
+pywin32==220
+requests==2.11.1
+simplejson==3.9.0
+six==1.10.0
