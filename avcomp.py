@@ -10,10 +10,10 @@
 __author__ = "httpe, Xiaokui Shu"
 __copyright__ = "Copyright 2016-2017, The VirusTotal AV Comparator Project"
 __license__ = "Apache"
-__version__ = "1.8"
+__version__ = "1.9"
 __maintainer__ = "httpe"
 __status__ = "Prototype"
-__date__ = "2017-05-28"
+__date__ = "2017-05-31"
 __contact__ = "https://github.com/httpe/Virustotal-AV-Comparator"
 
 
@@ -65,9 +65,9 @@ def cur_file_dir():
     """
     path = sys.path[0]
     if os.path.isdir(path):
-     return path
+        return path
     elif os.path.isfile(path):
-     return os.path.dirname(path)
+        return os.path.dirname(path)
 
 
 def sha256sum(filename):
@@ -92,7 +92,7 @@ class VirusTotal(object):
         self.apikey = ""
         self.URL_BASE = "https://www.virustotal.com/vtapi/v2/"
         self.HTTP_OK = 200
-        self.RETRY = 3
+        self.ATTEMPT = 3
 
         self.headers = {
           "Accept-Encoding": "gzip, deflate",
@@ -101,10 +101,9 @@ class VirusTotal(object):
 
         # whether the API_KEY is a public API. limited to 4 per min if so.
         self.is_public_api = True
-        # whether a retrieval request was sent recently
-        self.has_sent_retrieve_req = False
         # if needed (public API), sleep this amount of time between requests
-        self.PUBLIC_API_SLEEP_TIME = 16
+        self.PUBLIC_API_SLEEP_TIME = 15
+        self.last_request_time = time.perf_counter()
 
         self.logger = logging.getLogger("virt-log")
         self.logger.setLevel(logging.INFO)
@@ -149,6 +148,7 @@ class VirusTotal(object):
 
                             if os.path.exists(file_path):
                                 filenames.append(file_path)
+                                
 
                 else:
                     filenames += filter(lambda x: not (self.ignore_hidden and has_hidden_attribute(x)),
@@ -178,24 +178,27 @@ class VirusTotal(object):
                 result.append(False)
                 
             else:
-                for retry in range(self.RETRY):
-
-                    res = self.upload(filename)
-
-                    if res.status_code == self.HTTP_OK:
-                        resmap = json.loads(res.text)
-                        if not self.is_verboselog:
+                
+                res = self.upload(filename)
+                
+                if res == None:
+                    self.logger.warning("%s: \n\t  Send file failed", filename)
+                    result.append(False)
+                        
+                elif res.status_code != self.HTTP_OK:
+                    self.logger.warning("%s: \n\t  Send file failed, HTTP: %d", filename, res.status_code)
+                    result.append(False)
+                
+                else:
+                    resmap = json.loads(res.text)
+                    if not self.is_verboselog:
                             self.logger.info("%s: \n\t  Send file success, HTTP: %d", filename, res.status_code)
-                        else:
+                    else:
                             self.logger.info("%s: \n\t  Send file success: %s, HTTP: %d, content: %s", filename, res.status_code, res.text)
 
-                        result.append(True)
-                        break
-                    else:
-                        self.logger.warning("%s: \n\t  Attempt %d to send file failed, HTTP: %d", filename, retry+1, res.status_code)
-                        
-                        if retry == self.RETRY-1:
-                            result.append(False)
+                    result.append(True)
+                    
+
 
         return result
     
@@ -217,70 +220,75 @@ class VirusTotal(object):
             sha256chksum = sha256sum(filename)
             filename_list.append(os.path.basename(filename))
 
-            for retry1 in range(self.RETRY):
+            res = self.retrieve_report(sha256chksum)
 
-                res = self.retrieve_report(sha256chksum)
-                
-                if res.status_code != self.HTTP_OK:
-                    self.logger.warning("%s: \n\t  Attempt %d to retrieve report failed, HTTP: %d", filename, retry1+1, res.status_code)
-                    if retry1 == self.RETRY - 1:
+            if res == None:
+                self.logger.warning("%s: \n\t  Retrieve report failed", filename)
+                for av in avs:
+                    avs[av].append('Failed')       
+            
+            elif res.status_code != self.HTTP_OK:
+                self.logger.warning("%s: \n\t  Retrieve report failed, HTTP: %d", filename, res.status_code)
+                for av in avs:
+                    avs[av].append('Failed')       
+                            
+            else:
+                resmap = json.loads(res.text)             
+
+                if resmap['response_code'] == 0:
+
+                    self.logger.warning("%s: \n\t  File not found, now uploading...", filename)
+
+
+                    upload_res = self.send_files([filename])
+
+                    if upload_res[0]:
                         for av in avs:
-                            avs[av].append('Failed')                      
-                else:
-                    
-                    resmap = json.loads(res.text)             
-
-                    if resmap['response_code'] == 0:
-
-                        self.logger.warning("%s: \n\t  File not found, now uploading...", filename)
-
-                        upload_res = self.send_files([filename])
-
-                        if upload_res[0]:
-                            for av in avs:
-                                avs[av].append('Scanning')
-                        else:
-                            for av in avs:
-                                avs[av].append('Failed')
-
+                            avs[av].append('Scanning')
                     else:
+                        for av in avs:
+                            avs[av].append('Failed')
 
-                        if resmap["scan_date"] < self.reanalyze_time:
+                else:
 
-                            self.logger.warning("%s: \n\t  Report too old %s, reanalyzing...",
-                                                filename, resmap["scan_date"])
-                            
-                            for retry2 in range(self.RETRY):
+                    if resmap["scan_date"] < self.reanalyze_time:
 
-                                res = self.regenerate_report(sha256chksum)
-                                
-                                if res.status_code == self.HTTP_OK:
-                                    
-                                    #resmap = json.loads(res.text)
-                                    self.logger.info("%s: \n\t  Reanalyze request success", filename)
-                                    for av in avs:
-                                        avs[av].append('Reanalyzing')
-
-                                    break
-                                    
-                                else:
-                                    self.logger.warning("%s: \n\t  Attempt %d to regenerate report failed, HTTP: %d", filename, retry2+1, res.status_code)
-                                    if retry2 == self.RETRY - 1:
-                                        for av in avs:
-                                            avs[av].append('Failed')                            
-                            
-                        else:
-                                
-                            effective_file_counter += 1
-                            self.logger.info("%s: \n\t  Scandate: %s, Positive/Total: %d/%d",
-                                             filename,
-                                             resmap["scan_date"],
-                                             resmap["positives"],
-                                             resmap["total"])
-
-                            filename_list[-1] += '\n' + resmap["scan_date"]
-
+                        self.logger.warning("%s: \n\t  Report too old %s, reanalyzing...",
+                                                                filename, resmap["scan_date"])
+                         
+                        res = self.regenerate_report(sha256chksum)
+                        
+                        if res == None:
+                            self.logger.warning("%s: \n\t  Regenerate report failed", \
+                                                                            filename, res.status_code)
                             for av in avs:
+                                avs[av].append('Failed') 
+                        
+                        elif res.status_code != self.HTTP_OK:
+                            self.logger.warning("%s: \n\t  Regenerate report failed, HTTP: %d", \
+                                                                            filename, res.status_code)
+                            for av in avs:
+                                avs[av].append('Failed')      
+                                        
+                        else:
+                            self.logger.info("%s: \n\t  Reanalyze request success", filename)
+                            for av in avs:
+                                avs[av].append('Reanalyzing')
+
+                                                
+                                
+                    else:
+                                    
+                        effective_file_counter += 1
+                        self.logger.info("%s: \n\t  Scandate: %s, Positive/Total: %d/%d",
+                                                         filename,
+                                                         resmap["scan_date"],
+                                                         resmap["positives"],
+                                                         resmap["total"])
+
+                        filename_list[-1] += '\n' + resmap["scan_date"]
+
+                        for av in avs:
                                 if av in resmap["scans"]:
                                     avres = resmap["scans"][av]
                                     if avres["detected"]:
@@ -291,18 +299,18 @@ class VirusTotal(object):
                                         av_count[av] = (av_count[av][0],av_count[av][1]+1)
                                 else:
                                     avs[av].append("Unknown")
-                                    
-                            for av in resmap["scans"]:
-                                if av not in avs:
-                                    avres = resmap['scans'][av]
-                                    avs[av] = ['Unknown']*(len(filename_list)-1)
-                                    if avres["detected"]:
-                                        avs[av].append(avres["result"])
-                                        av_count[av] = (1,1)
-                                    else:
-                                        avs[av].append("Clean")
-                                        av_count[av] = (0,1)
-                    break
+                                        
+                        for av in resmap["scans"]:
+                            if av not in avs:
+                                avres = resmap['scans'][av]
+                                avs[av] = ['Unknown']*(len(filename_list)-1)
+                                if avres["detected"]:
+                                    avs[av].append(avres["result"])
+                                    av_count[av] = (1,1)
+                                else:
+                                    avs[av].append("Clean")
+                                    av_count[av] = (0,1)
+                
           
 
 
@@ -368,13 +376,19 @@ class VirusTotal(object):
         resmapdict = {}
         
         for filename in filenames:
+            resmapdict[filename] = None
+
             res = self.retrieve_report(sha256sum(filename))
 
-            if res.status_code == self.HTTP_OK:
+            if res == None:
+                self.logger.warning("%s: \n\t  Retrieve report failed: HTTP: %d", filename, res.status_code)
                 
+            elif res.status_code != self.HTTP_OK:
+                self.logger.warning("%s: \n\t  Retrieve report failed: HTTP: %d", filename, res.status_code)
+
+            else:
                 resmap = json.loads(res.text)
                 resmapdict[filename] = resmap
-
 
                 if resmap['response_code'] == 0:
                     self.logger.warning("%s: \n\t  File not found", filename)
@@ -385,9 +399,6 @@ class VirusTotal(object):
                                      resmap["positives"],
                                      resmap["total"])
 
-            else:
-                self.logger.warning("%s: \n\t  Retrieve report failed: HTTP: %d", filename, res.status_code)
-                resmapdict[filename] = None
 
         return resmapdict
         
@@ -404,25 +415,32 @@ class VirusTotal(object):
 
 
         for filename in filenames:
-            with open(filename) as f:
-                for line in f:
-                    checksum = line.strip()
-                    res = self.retrieve_report(checksum)
+            try:
+                with open(filename) as f:
+                    for line in f:
+                        checksum = line.strip()
+                        res = self.retrieve_report(checksum)
+                        
+                        if res == None:
+                            self.logger.warning("%s: \n\t  Retrieve report failed", checksum)
+                                
+                        elif res.status_code != self.HTTP_OK:
+                            self.logger.warning("%s: \n\t  Retrieve report failed, HTTP: %d", checksum, res.status_code)
 
-                    if res.status_code == self.HTTP_OK:
-                        resmap = json.loads(res.text)
-
-                        if resmap['response_code'] == 0:
-                            self.logger.warning("%s: \n\t  Checksum not found", checksum)
                         else:
-                            if not self.is_verboselog:
-                                self.logger.info("%s: \n\t  Retrieve report success, HTTP: %d, scan_date: %s, positives/total: %d/%d",
-                                        checksum, res.status_code, resmap["scan_date"], resmap["positives"], resmap["total"])
-                            else:
-                                self.logger.info("%s: \n\t  Retrieve report success, HTTP: %d, content: %s", checksum, res.status_code, res.text)
-                    else:
-                        self.logger.warning("%s: \n\t  Retrieve report failed, HTTP: %d", checksum, res.status_code)
+                            resmap = json.loads(res.text)
 
+                            if resmap['response_code'] == 0:
+                                self.logger.warning("%s: \n\t  Checksum not found", checksum)
+                            else:
+                                if not self.is_verboselog:
+                                    self.logger.info("%s: \n\t  Retrieve report success, HTTP: %d, scan_date: %s, positives/total: %d/%d",
+                                                    checksum, res.status_code, resmap["scan_date"], resmap["positives"], resmap["total"])
+                                else:
+                                    self.logger.info("%s: \n\t  Retrieve report success, HTTP: %d, content: %s", checksum, res.status_code, res.text)
+                            
+            except IOError as e:
+                print(e.args)
 
     def retrieve_report(self, chksum):
         """
@@ -432,16 +450,39 @@ class VirusTotal(object):
 
         @param chksum: sha256sum of the target file
         """
-        if self.has_sent_retrieve_req and self.is_public_api:
-            time.sleep(self.PUBLIC_API_SLEEP_TIME)
 
+        time_since_last_request = time.perf_counter() - self.last_request_time
+        
+        if self.is_public_api \
+            and time_since_last_request <= self.PUBLIC_API_SLEEP_TIME:
+            
+            time.sleep(self.PUBLIC_API_SLEEP_TIME - time_since_last_request)
+
+            
         url = self.URL_BASE + "file/report"
         params = {"apikey": self.apikey, "resource": chksum}
-        
-        #res = requests.post(url, data=params)
-        res = self.vt_session.get(url, params=params, headers=self.headers)
 
-        self.has_sent_retrieve_req = True
+        res = None
+        
+        for attempt in range(self.ATTEMPT):
+            try:
+                #res = requests.post(url, data=params)
+                res = self.vt_session.get(url, params=params, headers=self.headers)
+                
+            except SSLError as e:
+                self.vt_session = requests.Session()
+                self.vt_session.mount(self.URL_BASE, MyAdapter())
+                continue
+                
+            finally:
+                self.last_request_time = time.perf_counter()
+                
+            if res.status_code != self.HTTP_OK:
+                continue
+            else:
+                break
+            
+
         return res
     
     def regenerate_report(self, chksum):
@@ -452,37 +493,79 @@ class VirusTotal(object):
 
         @param chksum: sha256sum of the target file
         """
-        if self.has_sent_retrieve_req and self.is_public_api:
-            time.sleep(self.PUBLIC_API_SLEEP_TIME)
+        time_since_last_request = time.perf_counter() - self.last_request_time
+        
+        if self.is_public_api \
+            and time_since_last_request <= self.PUBLIC_API_SLEEP_TIME:
+            
+            time.sleep(self.PUBLIC_API_SLEEP_TIME - time_since_last_request)
 
         url = self.URL_BASE + "file/rescan"
         params = {"apikey": self.apikey, "resource": chksum}
-
-        #res = requests.post(url, data=params)
-        res = self.vt_session.post(url, params=params, headers=self.headers)
-
-
-        self.has_sent_retrieve_req = True
+        
+        res = None
+        
+        for attempt in range(self.ATTEMPT):
+            try:
+                #res = requests.post(url, data=params)
+                res = self.vt_session.post(url, params=params, headers=self.headers)
+                
+            except SSLError as e:
+                self.vt_session = requests.Session()
+                self.vt_session.mount(self.URL_BASE, MyAdapter())
+                continue
+                
+            finally:
+                self.last_request_time = time.perf_counter()
+                
+            if res.status_code != self.HTTP_OK:
+                continue
+            else:
+                break
+        
+        
+        
         return res
             
 
     def upload(self, path):
 
-        if self.has_sent_retrieve_req and self.is_public_api:
-            time.sleep(self.PUBLIC_API_SLEEP_TIME)
+        time_since_last_request = time.perf_counter() - self.last_request_time
+        
+        if self.is_public_api \
+            and time_since_last_request <= self.PUBLIC_API_SLEEP_TIME:
+            
+            time.sleep(self.PUBLIC_API_SLEEP_TIME - time_since_last_request)
 
         url = self.URL_BASE + "file/scan"
         params = {"apikey": self.apikey}
 
         filename = os.path.basename(path)
         
-        with open(path, 'rb') as file:
+        res = None
 
-            #res = requests.post(url, data=params, files={"file": file})
-            res = self.vt_session.post(url, params=params, files={"file": (filename, file)})
+        for attempt in range(self.ATTEMPT):
+            try:
+                with open(path, 'rb') as file:
+                    #res = requests.post(url, data=params, files={"file": file})
+                    res = self.vt_session.post(url, params=params, files={"file": (filename, file)})
+                    
+            except IOError as e:
+                print(e.args)
+                
+            except SSLError as e:
+                self.vt_session = requests.Session()
+                self.vt_session.mount(self.URL_BASE, MyAdapter())
+                continue
+                
+            finally:
+                self.last_request_time = time.perf_counter()
+                
+            if res.status_code != self.HTTP_OK:
+                continue
+            else:
+                break
 
-
-        self.has_sent_retrieve_req = True
         return res
 
 
@@ -507,7 +590,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = name_version)
 
     parser.add_argument('paths', metavar='PATH', nargs='*',
-                help='File/Folder to be scanned', default=[])
+                            help='File/Folder to be scanned', default=[])
 
     parser.add_argument("-c", "--compare", help="cross-compare all anti-virus products (default action)", action="store_true")
     parser.add_argument("-s", "--send", help="send a file or a directory of files to scan", action="store_true")
