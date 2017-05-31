@@ -8,7 +8,7 @@
 """
 
 __author__ = "httpe, Xiaokui Shu"
-__copyright__ = "Copyright 2016, The VirusTotal AV Comparator Project"
+__copyright__ = "Copyright 2016-2017, The VirusTotal AV Comparator Project"
 __license__ = "Apache"
 __version__ = "1.8"
 __maintainer__ = "httpe"
@@ -101,7 +101,7 @@ class VirusTotal(object):
 
         # whether the API_KEY is a public API. limited to 4 per min if so.
         self.is_public_api = True
-        # whether a retrieval request is sent recently
+        # whether a retrieval request was sent recently
         self.has_sent_retrieve_req = False
         # if needed (public API), sleep this amount of time between requests
         self.PUBLIC_API_SLEEP_TIME = 16
